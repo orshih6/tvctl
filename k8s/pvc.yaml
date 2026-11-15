@@ -1,0 +1,14 @@
+# The TV pairing token and the Telegram offset. Hand-applied (Argo CD's
+# project allows workloads only). local-path, so it lives on ori-minipc,
+# where the Deployment is pinned anyway.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tvctl-data
+  namespace: tvctl
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi

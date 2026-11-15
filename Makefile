@@ -1,0 +1,9 @@
+.PHONY: build test check
+build:
+	go build -o bin/tvctl ./cmd/tvctl
+test:
+	go test -race ./...
+check:
+	test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }
+	go vet ./...
+	go test -race ./...
