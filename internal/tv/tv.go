@@ -48,7 +48,10 @@ type TV struct {
 }
 
 func New(host, mac, name, tokenFile string) *TV {
-	return &TV{Host: host, MAC: mac, Name: name, TokenFile: tokenFile, http: &http.Client{Timeout: 8 * time.Second}}
+	// One connection per request: on a reused connection the TV carries out a
+	// POST or DELETE and then hangs up without answering (the caller sees EOF).
+	hc := &http.Client{Timeout: 8 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
+	return &TV{Host: host, MAC: mac, Name: name, TokenFile: tokenFile, http: hc}
 }
 
 // Apps the bot knows by name. IDs are the TV's own (see `tvctl apps`).
