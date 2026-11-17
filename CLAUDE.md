@@ -1,6 +1,6 @@
 # tvctl
 
-Telegram remote for the Samsung TV at home. Go, no database. Deploy: `k8s/README.md`.
+Telegram remote for a Samsung TV (the author's is at home). Go, no database. **Public repo (MIT)**: never commit an address, MAC, chat id or token. Deploy: `k8s/README.md`.
 
 Invariants:
 - **Only `TELEGRAM_CHAT_ID` is heard.** Everyone else is ignored without a reply. Never

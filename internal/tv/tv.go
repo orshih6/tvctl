@@ -36,7 +36,7 @@ import (
 )
 
 type TV struct {
-	Host string // e.g. 192.168.1.157
+	Host string // e.g. 192.168.1.50
 	MAC  string // Wi-Fi or Ethernet MAC, for Wake-on-LAN
 	// Name is how this client appears in the TV's device list.
 	Name string
@@ -465,6 +465,9 @@ func (t *TV) Off(ctx context.Context) error {
 }
 
 func (t *TV) wake() error {
+	if t.MAC == "" {
+		return errors.New("TV_MAC is not set")
+	}
 	hw, err := net.ParseMAC(t.MAC)
 	if err != nil {
 		return fmt.Errorf("TV_MAC %q: %w", t.MAC, err)

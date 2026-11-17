@@ -34,8 +34,8 @@ const usage = `tvctl — the Samsung TV at home, from Telegram or a terminal
   tvctl yt <link|id>     play a YouTube video on the TV
   tvctl on | off         wake / standby
 
-Environment: TV_HOST (default 192.168.1.157), TV_MAC (for wake-on-LAN),
-TVCTL_DATA (state dir, default ~/.config/tvctl), TVCTL_NAME (default tvctl),
+Environment: TV_HOST (the TV's address on your network, required), TV_MAC
+(its MAC address, for wake-on-LAN), TVCTL_DATA (state dir, default ~/.config/tvctl), TVCTL_NAME (default tvctl),
 TVCTL_MEDIA_PORT (default 8765), TVCTL_MODEL (Claude model, default sonnet;
 "off" disables plain-language requests), CLAUDE_CODE_OAUTH_TOKEN.
 `
@@ -58,7 +58,10 @@ func main() {
 	if err := os.MkdirAll(data, 0o700); err != nil {
 		fail(err)
 	}
-	t := tv.New(env("TV_HOST", "192.168.1.157"), env("TV_MAC", "F4:DD:06:1A:7D:FA"), env("TVCTL_NAME", "tvctl"), filepath.Join(data, "tv-token"))
+	if env("TV_HOST", "") == "" && os.Args[1] != "version" {
+		fail(fmt.Errorf("set TV_HOST to the TV's address on your network (e.g. 192.168.1.50)"))
+	}
+	t := tv.New(env("TV_HOST", ""), env("TV_MAC", ""), env("TVCTL_NAME", "tvctl"), filepath.Join(data, "tv-token"))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

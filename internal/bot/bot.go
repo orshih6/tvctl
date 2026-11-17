@@ -110,7 +110,7 @@ var Commands = []telegram.Command{
 	{Name: "help", Help: "what this bot can do"},
 }
 
-const help = `<b>TV remote</b> for the Samsung in the living room.
+const help = `<b>TV remote</b> for the Samsung TV.
 
 • /remote — buttons: arrows, OK, Back, Home, volume
 • Send a <b>photo or video</b> — it appears on the TV
