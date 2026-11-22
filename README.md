@@ -4,6 +4,8 @@ A Telegram remote for a Samsung TV (Tizen). You run it on a machine on the same 
 as the TV, talk to your own Telegram bot, and the TV does it:
 
 - `/remote`: buttons for arrows, OK, Back, Home, volume, play/pause, apps
+- **a Mini App remote** (optional): a page inside Telegram with a real volume slider, a
+  d-pad and the same buttons
 - **send a photo, video or song**: it shows or plays on the TV
 - **send a YouTube link**: it plays on the TV
 - `/status` · `/vol 10` · `/mute` · `/open netflix` · `/close` (background apps) · `/on` · `/off` · `/stop`
@@ -68,12 +70,30 @@ Connection Manager → **Power On with Mobile** on the TV.
 | `TVCTL_DATA` | where the pairing token and media live (default `~/.config/tvctl`) |
 | `TVCTL_NAME` | how the remote appears in the TV's device list (default `tvctl`) |
 | `TVCTL_MEDIA_PORT` | port the TV fetches media from (default `8765`) |
+| `TVCTL_APP_URL` | public HTTPS address of the Mini App remote; unset: no Mini App |
+| `TVCTL_APP_PORT` | port the Mini App is served on (default `8766`) |
 | `TVCTL_MODEL` | Claude model for plain-language requests (default `sonnet`); `off` disables them |
 | `CLAUDE_CODE_OAUTH_TOKEN` | credential for Claude Code, when it isn't already logged in |
 
 Plain-language requests need [Claude Code](https://claude.com/claude-code) installed
 (`claude` on the `PATH`). Without it, or with `TVCTL_MODEL=off`, commands, buttons, media
 and YouTube links all still work.
+
+### The Mini App remote (optional)
+
+Telegram bot messages have buttons but no slider, so the volume slider is a small web page
+that Telegram opens inside the chat (a Mini App). Telegram only opens HTTPS pages, so it
+needs a public address:
+
+1. Put an HTTPS reverse proxy (or a tunnel) in front of port `8766` of the machine running
+   tvctl. Route **only that port**, never the media port.
+2. Set `TVCTL_APP_URL=https://tv.example.com` and restart. The bot adds a **Remote** button
+   beside the message box and at the top of `/remote`.
+
+The page itself is an empty shell that anyone can load. Every call it makes carries the
+launch data Telegram signed with your bot's token, and tvctl acts only when the signature
+is valid, less than 12 hours old and for `TELEGRAM_CHAT_ID`. Everything else gets an empty
+`401`. An open remote stops after 12 hours; close it and open it again.
 
 ### Docker
 
@@ -92,11 +112,15 @@ to that cluster.
 ## Safety
 
 - Only `TELEGRAM_CHAT_ID` is heard. Every other chat is ignored without a reply.
-- Volume jumps are capped (no more than +10 above 40 at once).
+- Volume jumps are capped (no more than +10 above 40 at once). Changes less than two
+  seconds apart count as one jump, so dragging the slider up is capped the same way.
+- The Mini App's address is public, but it obeys only Telegram's signed launch data for
+  `TELEGRAM_CHAT_ID`. Whoever holds the bot token can forge that, so keep the token
+  secret and replace it in BotFather if it leaks.
 - Claude can only search the web and choose from the same small action set as the
   buttons; it cannot run anything else.
 - The media port is open to your LAN. The random file names are the only guard, so don't
-  expose that port to the internet.
+  expose that port to the internet. The Mini App is on its own port for that reason.
 
 ## Development
 

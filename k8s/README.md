@@ -42,7 +42,14 @@ the real remote; the token lands in the PVC (`/data/tv-token`) and it never asks
 If it's ever denied, remove "tvctl" under the TV's Settings → General → External Device
 Manager → Device Connection Manager → Device List, and press a button on /remote again.
 
-## 4. Watch
+## 4. The Mini App remote
+
+`TVCTL_APP_URL` in the ConfigMap turns it on; the pod then serves it on port 8766. The
+Service is in `manifest/apps/tvctl`. The hostname's DNS record, Gateway listener,
+Certificate and HTTPRoute are hand-applied and kept out of this public repo (the author's
+are in the private `k0s/tvctl/`). Route only port 8766: the media port stays on the LAN.
+
+## 5. Watch
 
 ```bash
 kubectl -n argocd get application tvctl

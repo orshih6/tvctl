@@ -36,7 +36,8 @@ const usage = `tvctl — the Samsung TV at home, from Telegram or a terminal
 
 Environment: TV_HOST (the TV's address on your network, required), TV_MAC
 (its MAC address, for wake-on-LAN), TVCTL_DATA (state dir, default ~/.config/tvctl), TVCTL_NAME (default tvctl),
-TVCTL_MEDIA_PORT (default 8765), TVCTL_MODEL (Claude model, default sonnet;
+TVCTL_MEDIA_PORT (default 8765), TVCTL_APP_URL (public HTTPS address of the
+Mini App remote; unset: no Mini App), TVCTL_APP_PORT (default 8766), TVCTL_MODEL (Claude model, default sonnet;
 "off" disables plain-language requests), CLAUDE_CODE_OAUTH_TOKEN.
 `
 
@@ -147,6 +148,23 @@ func serve(ctx context.Context, t *tv.TV, data string, log *slog.Logger) {
 	if err := tg.SetCommands(ctx, bot.Commands); err != nil {
 		log.Warn("set commands", "err", err)
 	}
+	// The Mini App (a remote with a volume slider) is off unless it has a
+	// public HTTPS address: Telegram opens nothing else.
+	if u := env("TVCTL_APP_URL", ""); u != "" {
+		if !strings.HasPrefix(u, "https://") {
+			fail(fmt.Errorf("TVCTL_APP_URL must start with https://"))
+		}
+		appPort, _ := strconv.Atoi(env("TVCTL_APP_PORT", "8766"))
+		b.AppURL = u
+		go func() {
+			if err := b.ServeApp(ctx, appPort); err != nil {
+				log.Error("mini app server stopped", "err", err)
+			}
+		}()
+		if err := tg.SetMenuButton(ctx, "Remote", u); err != nil {
+			log.Warn("set menu button", "err", err)
+		}
+	}
 	offsetFile := filepath.Join(data, "telegram-offset")
 	offset := func() int64 {
 		b, _ := os.ReadFile(offsetFile)
@@ -156,7 +174,7 @@ func serve(ctx context.Context, t *tv.TV, data string, log *slog.Logger) {
 	save := func(n int64) { _ = os.WriteFile(offsetFile, []byte(strconv.FormatInt(n, 10)), 0o600) }
 
 	ip, _ := t.LocalIP()
-	log.Info("tvctl serving", "version", version, "tv", t.Host, "paired", t.Paired(), "media", fmt.Sprintf("http://%s:%d/m/", ip, port), "claude", b.LLM != nil)
+	log.Info("tvctl serving", "version", version, "tv", t.Host, "paired", t.Paired(), "media", fmt.Sprintf("http://%s:%d/m/", ip, port), "claude", b.LLM != nil, "miniapp", b.AppURL != "")
 	tg.Poll(ctx, b, offset, save)
 }
 

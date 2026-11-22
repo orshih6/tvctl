@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>TV remote</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root {
+  --bg: var(--tg-theme-secondary-bg-color, #f1f1f4);
+  --card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, #fff));
+  --text: var(--tg-theme-text-color, #111);
+  --hint: var(--tg-theme-hint-color, #8a8a90);
+  --accent: var(--tg-theme-button-color, #2f7cf6);
+  --on-accent: var(--tg-theme-button-text-color, #fff);
+  --danger: var(--tg-theme-destructive-text-color, #e5484d);
+  --key: color-mix(in srgb, var(--text) 8%, transparent);
+  --key-down: color-mix(in srgb, var(--text) 18%, transparent);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 16px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-user-select: none; user-select: none; touch-action: manipulation;
+  overscroll-behavior: none;
+}
+main {
+  max-width: 440px; margin: 0 auto; min-height: 100%;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 12px;
+}
+.card { background: var(--card); border-radius: 18px; padding: 16px; }
+button {
+  font: inherit; color: var(--text); background: var(--key); border: 0;
+  border-radius: 14px; min-height: 52px; padding: 0 8px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  transition: background .08s, transform .08s;
+}
+button:active, button.down { background: var(--key-down); transform: scale(.96); }
+svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+header { display: flex; align-items: center; gap: 10px; padding: 0 2px; }
+#dot { width: 9px; height: 9px; border-radius: 50%; background: var(--hint); flex: none; }
+#dot.on { background: #30b566; }
+#name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sub { color: var(--hint); font-size: 13px; }
+header .grow { flex: 1; min-width: 0; }
+#power { width: 52px; border-radius: 50%; color: var(--danger); }
+
+.vol-top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+.vol-top span { color: var(--hint); font-size: 13px; text-transform: uppercase; letter-spacing: .06em; }
+#num { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+#num.muted { color: var(--hint); text-decoration: line-through; }
+
+/* The slider: a thick track that fills to the thumb. */
+#vol {
+  -webkit-appearance: none; appearance: none; display: block; width: 100%;
+  height: 56px; margin: 8px 0 12px; border-radius: 16px; outline: 0;
+  background: linear-gradient(to right, var(--accent) var(--fill, 0%), var(--key) var(--fill, 0%));
+  touch-action: none; cursor: pointer;
+}
+#vol::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 8px; height: 34px;
+  border-radius: 4px; background: var(--on-accent); box-shadow: 0 0 0 1px rgba(0,0,0,.15), 0 1px 4px rgba(0,0,0,.3);
+}
+#vol::-moz-range-thumb { width: 8px; height: 34px; border: 0; border-radius: 4px; background: var(--on-accent); box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
+#vol::-moz-range-track { background: transparent; }
+.vol-keys { display: grid; grid-template-columns: 1fr 1.2fr 1fr; gap: 10px; }
+#mute.active { background: var(--accent); color: var(--on-accent); }
+
+.pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.pad button { min-height: 64px; }
+#ok { background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 18px; }
+.row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.row3 + .row3, .pad + .row3 { margin-top: 10px; }
+.small { font-size: 14px; }
+
+#toast {
+  position: fixed; left: 16px; right: 16px; bottom: calc(18px + env(safe-area-inset-bottom));
+  margin: 0 auto; max-width: 408px; padding: 12px 14px; border-radius: 14px;
+  background: var(--text); color: var(--bg); font-size: 14px; text-align: center;
+  opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .18s, transform .18s;
+}
+#toast.show { opacity: .96; transform: none; }
+#block {
+  position: fixed; inset: 0; background: var(--bg); display: none;
+  align-items: center; justify-content: center; padding: 32px; text-align: center; color: var(--hint);
+}
+#block.show { display: flex; }
+.off main > .card { opacity: .45; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div id="dot"></div>
+    <div class="grow"><div id="name">TV</div><div id="sub">Connecting…</div></div>
+    <button id="power" aria-label="Power"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 7.2a8 8 0 1 0 11.4 0"/></svg></button>
+  </header>
+
+  <section class="card">
+    <div class="vol-top"><span>Volume</span><div id="num">–</div></div>
+    <input id="vol" type="range" min="0" max="100" step="1" value="0" aria-label="Volume">
+    <div class="vol-keys">
+      <button id="down" aria-label="Volume down"><svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg></button>
+      <button id="mute" aria-label="Mute"><svg viewBox="0 0 24 24"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z"/><path id="wave" d="M16 9a4.5 4.5 0 0 1 0 6M18.6 6.5a8 8 0 0 1 0 11"/></svg><span id="mutetxt">Mute</span></button>
+      <button id="up" aria-label="Volume up"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="pad">
+      <button data-do="k:KEY_MENU" class="small">Menu</button>
+      <button data-do="k:KEY_UP" aria-label="Up"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button>
+      <button data-do="k:KEY_INFO" class="small">Info</button>
+      <button data-do="k:KEY_LEFT" aria-label="Left"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <button data-do="k:KEY_ENTER" id="ok">OK</button>
+      <button data-do="k:KEY_RIGHT" aria-label="Right"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+      <button data-do="k:KEY_RETURN" class="small"><svg viewBox="0 0 24 24"><path d="M9 14l-4-4 4-4"/><path d="M5 10h9a5 5 0 0 1 0 10h-3"/></svg>Back</button>
+      <button data-do="k:KEY_DOWN" aria-label="Down"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>
+      <button data-do="k:KEY_HOME" class="small"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 10v9h12v-9"/></svg>Home</button>
+    </div>
+    <div class="row3">
+      <button data-do="k:KEY_REWIND" aria-label="Rewind"><svg viewBox="0 0 24 24"><path d="M11 7l-6 5 6 5zM20 7l-6 5 6 5z"/></svg></button>
+      <button data-do="k:KEY_PLAY_BACK" aria-label="Play or pause"><svg viewBox="0 0 24 24"><path d="M5 6l8 6-8 6zM17 6v12M20.5 6v12"/></svg></button>
+      <button data-do="k:KEY_FF" aria-label="Fast forward"><svg viewBox="0 0 24 24"><path d="M13 7l6 5-6 5zM4 7l6 5-6 5z"/></svg></button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="row3">
+      <button data-do="o:youtube" class="small">YouTube</button>
+      <button data-do="o:netflix" class="small">Netflix</button>
+      <button data-do="c:bg" class="small">Close apps</button>
+    </div>
+  </section>
+</main>
+<div id="toast" role="status"></div>
+<div id="block"></div>
+
+<script>
+(function () {
+  var tg = (window.Telegram && Telegram.WebApp) || null;
+  var $ = function (id) { return document.getElementById(id); };
+  var vol = $('vol'), num = $('num');
+  var state = { on: false, volume: 0, muted: false };
+  var dragging = false, busy = false, pending = null, dead = false, toastT;
+
+  function block(text) { dead = true; $('block').textContent = text; $('block').classList.add('show'); }
+  if (!tg || !tg.initData) { block('Open this remote from the tvctl bot in Telegram.'); return; }
+  tg.ready(); tg.expand();
+  if (tg.disableVerticalSwipes) tg.disableVerticalSwipes(); // a drag must not close the page
+  try { tg.setHeaderColor('secondary_bg_color'); tg.setBackgroundColor('secondary_bg_color'); } catch (e) {}
+
+  function buzz(kind) {
+    try {
+      if (kind === 'tick') tg.HapticFeedback.selectionChanged();
+      else tg.HapticFeedback.impactOccurred(kind || 'light');
+    } catch (e) {}
+  }
+  function toast(text) {
+    var t = $('toast'); t.textContent = text; t.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove('show'); }, 2600);
+  }
+  function api(path, payload) {
+    var opt = { method: payload ? 'POST' : 'GET', headers: { Authorization: 'tma ' + tg.initData } };
+    if (payload) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(payload); }
+    return fetch(path, opt).then(function (r) {
+      if (r.status === 401) { block('This remote has expired. Close it and open it again from the bot.'); throw new Error('expired'); }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    });
+  }
+  function paintVolume(v) {
+    vol.style.setProperty('--fill', v + '%');
+    num.textContent = v;
+  }
+  function paint(s) {
+    if (s.msg) toast(s.msg);
+    if ('name' in s || 'on' in s) {
+      state.on = !!s.on;
+      if (s.name) $('name').textContent = s.name;
+      $('dot').classList.toggle('on', state.on);
+      $('sub').textContent = state.on ? 'On' : 'Off or not answering';
+      document.body.classList.toggle('off', !state.on);
+    }
+    if (!state.on) return;
+    if ('muted' in s) state.muted = !!s.muted;
+    state.volume = s.volume;
+    if (!dragging) { vol.value = s.volume; paintVolume(s.volume); }
+    num.classList.toggle('muted', state.muted);
+    $('mute').classList.toggle('active', state.muted);
+    $('mutetxt').textContent = state.muted ? 'Unmute' : 'Mute';
+    $('wave').style.display = state.muted ? 'none' : '';
+  }
+  function refresh() {
+    if (dead || dragging || busy || document.hidden) return;
+    api('/api/state').then(paint).catch(function () { $('sub').textContent = 'No connection'; });
+  }
+
+  // Volume: only the newest level is ever waiting, one request at a time, so
+  // the TV follows the thumb without a queue building up behind it.
+  function sendVolume(level, final) {
+    pending = { level: level, final: final };
+    if (busy) return;
+    var job = pending; pending = null; busy = true;
+    api('/api/volume', { level: job.level }).then(function (s) {
+      if ('on' in s) { dragging = false; paint(s); return; } // it failed: this is the TV's state
+      state.volume = s.volume;
+      if (job.final && !pending && !dragging) { vol.value = s.volume; paintVolume(s.volume); if (s.msg) toast(s.msg); }
+    }).catch(function (e) {
+      if (e.message !== 'expired') toast('The TV did not answer.');
+    }).then(function () {
+      busy = false;
+      if (pending) sendVolume(pending.level, pending.final);
+      else if (job.final) setTimeout(refresh, 400);
+    });
+  }
+  var lastTick = -1;
+  vol.addEventListener('input', function () {
+    dragging = true;
+    var v = +vol.value; paintVolume(v);
+    if (v !== lastTick && v % 2 === 0) { buzz('tick'); lastTick = v; }
+    sendVolume(v, false);
+  });
+  vol.addEventListener('change', function () {
+    dragging = false;
+    sendVolume(+vol.value, true);
+  });
+  function step(d) {
+    if (!state.on) return toast('The TV is off.');
+    var v = Math.max(0, Math.min(100, +vol.value + d));
+    vol.value = v; paintVolume(v); buzz('light');
+    sendVolume(v, true);
+  }
+  $('down').addEventListener('click', function () { step(-1); });
+  $('up').addEventListener('click', function () { step(1); });
+  $('mute').addEventListener('click', function () {
+    buzz('medium');
+    api('/api/do', { data: 'k:KEY_MUTE' }).then(function () { setTimeout(refresh, 350); }).catch(function () {});
+  });
+
+  $('power').addEventListener('click', function () {
+    var turnOn = !state.on;
+    var go = function () {
+      buzz('heavy'); $('sub').textContent = turnOn ? 'Waking the TV…' : 'Turning off…';
+      api('/api/do', { data: turnOn ? 'p:on' : 'p:off' }).then(paint).catch(function () {});
+    };
+    if (turnOn) return go();
+    if (tg.showConfirm) tg.showConfirm('Turn the TV off?', function (yes) { if (yes) go(); }); else go();
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-do]'), function (btn) {
+    btn.addEventListener('click', function () {
+      var data = btn.getAttribute('data-do');
+      buzz('light');
+      api('/api/do', { data: data }).then(function (s) {
+        if (data.charAt(0) === 'k') { if (s.msg) toast(s.msg); return; } // keys answer only when something is wrong
+        paint(s);
+      }).catch(function (e) { if (e.message !== 'expired') toast('The TV did not answer.'); });
+    });
+  });
+
+  refresh();
+  setInterval(refresh, 5000);
+  document.addEventListener('visibilitychange', refresh);
+})();
+</script>
+</body>
+</html>

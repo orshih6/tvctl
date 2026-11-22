@@ -66,15 +66,20 @@ func (b *Bot) call(ctx context.Context, method string, params, out any) error {
 	return nil
 }
 
-// Button is an inline callback button.
-type Button struct{ Text, Data string }
+// Button is an inline callback button, or, with App set, one that opens that
+// HTTPS page as a Mini App.
+type Button struct{ Text, Data, App string }
 
 func keyboard(rows [][]Button) map[string]any {
-	kb := [][]map[string]string{}
+	kb := [][]map[string]any{}
 	for _, row := range rows {
-		var r []map[string]string
+		var r []map[string]any
 		for _, bt := range row {
-			r = append(r, map[string]string{"text": bt.Text, "callback_data": bt.Data})
+			if bt.App != "" {
+				r = append(r, map[string]any{"text": bt.Text, "web_app": map[string]string{"url": bt.App}})
+				continue
+			}
+			r = append(r, map[string]any{"text": bt.Text, "callback_data": bt.Data})
 		}
 		if len(r) > 0 {
 			kb = append(kb, r)
@@ -108,6 +113,13 @@ func (b *Bot) SetCommands(ctx context.Context, cs []Command) error {
 		list = append(list, map[string]string{"command": c.Name, "description": c.Help})
 	}
 	return b.call(ctx, "setMyCommands", map[string]any{"commands": list}, nil)
+}
+
+// SetMenuButton makes the button beside the message box open url as a Mini
+// App, for the configured chat only.
+func (b *Bot) SetMenuButton(ctx context.Context, text, url string) error {
+	return b.call(ctx, "setChatMenuButton", map[string]any{"chat_id": b.chatID,
+		"menu_button": map[string]any{"type": "web_app", "text": text, "web_app": map[string]string{"url": url}}}, nil)
 }
 
 // Media is a photo, video or audio file sent to the bot.

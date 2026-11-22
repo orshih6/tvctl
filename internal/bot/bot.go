@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/orshih6/tvctl/internal/claude"
@@ -30,7 +31,12 @@ type Bot struct {
 	LLM       claude.LLM // nil: plain-language requests are off
 	MediaDir  string     // photos/videos waiting for the TV to fetch them
 	MediaPort int        // served on this port, on every interface
+	AppURL    string     // public HTTPS address of the Mini App; empty: no Mini App
 	Log       *slog.Logger
+
+	volMu   sync.Mutex // one volume change at a time
+	volBase int        // the volume when the current burst of changes began
+	volAt   time.Time  // the last change
 }
 
 // ServeMedia serves MediaDir to the TV and deletes files older than a day.
@@ -83,9 +89,9 @@ func (n noList) Open(name string) (http.File, error) {
 
 // ---- the remote ---------------------------------------------------------------
 
-func remote() [][]telegram.Button {
+func (b *Bot) remote() [][]telegram.Button {
 	k := func(label, key string) telegram.Button { return telegram.Button{Text: label, Data: "k:" + key} }
-	return [][]telegram.Button{
+	rows := [][]telegram.Button{
 		{k("🔇", "KEY_MUTE"), k("🔉 Vol −", "KEY_VOLDOWN"), k("🔊 Vol +", "KEY_VOLUP")},
 		{k("·", "KEY_MENU"), k("⬆️", "KEY_UP"), k("·", "KEY_INFO")},
 		{k("⬅️", "KEY_LEFT"), k("OK", "KEY_ENTER"), k("➡️", "KEY_RIGHT")},
@@ -94,6 +100,10 @@ func remote() [][]telegram.Button {
 		{{Text: "▶️ YouTube", Data: "o:youtube"}, {Text: "🎬 Netflix", Data: "o:netflix"}, {Text: "🧹 Close apps", Data: "c:bg"}},
 		{{Text: "📊 Status", Data: "s:"}, {Text: "⏻ Off", Data: "p:off"}, {Text: "⏻ On", Data: "p:on"}},
 	}
+	if b.AppURL != "" {
+		rows = append([][]telegram.Button{{{Text: "🎚 Open the remote (volume slider)", App: b.AppURL}}}, rows...)
+	}
+	return rows
 }
 
 var Commands = []telegram.Command{
@@ -124,6 +134,9 @@ func (b *Bot) Button(ctx context.Context, data string) string {
 	kind, arg, _ := strings.Cut(data, ":")
 	switch kind {
 	case "k":
+		if !keyName.MatchString(arg) {
+			return ""
+		}
 		if err := b.TV.Keys(ctx, arg); err != nil {
 			return b.problem(ctx, err)
 		}
@@ -143,9 +156,9 @@ func (b *Bot) Button(ctx context.Context, data string) string {
 func (b *Bot) Command(ctx context.Context, name, args string) (string, [][]telegram.Button) {
 	switch name {
 	case "start", "help":
-		return help, remote()
+		return help, b.remote()
 	case "remote":
-		return "📺 Remote", remote()
+		return "📺 Remote", b.remote()
 	}
 	if reply, ok := b.quick(ctx, name, args); ok {
 		return reply, nil
@@ -196,7 +209,7 @@ func (b *Bot) Text(ctx context.Context, text string) (string, [][]telegram.Butto
 		return reply, nil
 	}
 	if strings.EqualFold(text, "remote") {
-		return "📺 Remote", remote()
+		return "📺 Remote", b.remote()
 	}
 	if b.LLM == nil {
 		return "I only understand commands for now. Try /help.", nil
@@ -292,14 +305,50 @@ func (b *Bot) volume(ctx context.Context, arg string) string {
 			n = v
 		}
 	}
-	n = max(0, min(n, 100))
-	if n > 40 && n > cur+10 {
-		n = cur + 10 // a typo shouldn't blast the room; ask again to go higher
-	}
-	if err := b.TV.SetVolume(ctx, n); err != nil {
+	cur, n, err = b.setVolume(ctx, n)
+	if err != nil {
 		return b.problem(ctx, err)
 	}
 	return fmt.Sprintf("🔊 Volume %d → %d.", cur, n)
+}
+
+// volBurst: volume changes closer together than this count as one jump, so
+// a slider dragged up (many small steps) is capped like one big step.
+const volBurst = 2 * time.Second
+
+// capVolume is the volume to set when want is asked for and base is where
+// the jump started: a typo, a model mistake or a slipped thumb shouldn't
+// blast the room, so above 40 it rises at most 10 at once. Ask again to go
+// higher.
+func capVolume(base, want int) int {
+	n := max(0, min(want, 100))
+	if n > 40 && n > base+10 {
+		n = base + 10
+	}
+	return n
+}
+
+// setVolume is the one way the volume is set: every caller gets the cap.
+// It returns the volume before and after.
+func (b *Bot) setVolume(ctx context.Context, want int) (cur, n int, err error) {
+	b.volMu.Lock()
+	defer b.volMu.Unlock()
+	cur, _, err = b.TV.Volume(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	base := cur
+	if time.Since(b.volAt) < volBurst {
+		base = min(base, b.volBase)
+	}
+	n = capVolume(base, want)
+	if n != cur {
+		if err := b.TV.SetVolume(ctx, n); err != nil {
+			return cur, cur, err
+		}
+	}
+	b.volBase, b.volAt = base, time.Now()
+	return cur, n, nil
 }
 
 func (b *Bot) mute(ctx context.Context, which string) string {
