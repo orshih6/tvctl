@@ -6,7 +6,8 @@
 //     first connection makes the TV ask "Allow?", and the token it then hands
 //     out is reused so it never asks again.
 //   - UPnP/DLNA on :9197 (volume, mute, showing a photo or video by URL).
-//   - DIAL on :8080 (starting YouTube on a given video).
+//   - DIAL on :8080 (starting YouTube on a given video; an open YouTube is
+//     sent the video over YouTube's cast channel instead, see lounge.go).
 //
 // None of these can read the screen; Samsung offers no screenshot.
 package tv
@@ -192,10 +193,30 @@ func YouTubeID(s string) (string, bool) {
 	return "", false
 }
 
-// PlayYouTube opens YouTube on the TV straight into a video. The TV answers
-// 403 to a DIAL launch without an Origin; it accepts the one the YouTube
-// phone app sends.
+// PlayYouTube plays a video in the TV's YouTube app. If the app is already
+// open it is sent the video over YouTube's cast channel (lounge.go), because
+// a running app ignores a DIAL launch; otherwise the app is started on it.
 func (t *TV) PlayYouTube(ctx context.Context, videoID string) error {
+	if screen := t.youtubeScreen(ctx); screen != "" {
+		yt := Apps["youtube"]
+		if s, err := t.AppStatus(ctx, yt); err == nil && !s.Visible {
+			_ = t.Launch(ctx, yt) // open in the background: bring it to the screen
+			time.Sleep(2 * time.Second)
+		}
+		if err := t.cast(ctx, screen, videoID); err == nil {
+			return nil
+		}
+		// The cast channel didn't work: close the app so the launch below is read.
+		_ = t.Close(ctx, yt)
+		time.Sleep(2 * time.Second)
+	}
+	return t.launchYouTube(ctx, videoID)
+}
+
+// launchYouTube starts YouTube straight into a video (DIAL). The TV answers
+// 403 to a DIAL launch without an Origin; it accepts the one the YouTube
+// phone app sends. Only an app that isn't running reads the video id.
+func (t *TV) launchYouTube(ctx context.Context, videoID string) error {
 	req, err := http.NewRequestWithContext(ctx, "POST", "http://"+t.Host+":8080/ws/apps/YouTube", strings.NewReader("v="+url.QueryEscape(videoID)))
 	if err != nil {
 		return err

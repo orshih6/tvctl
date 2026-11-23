@@ -26,7 +26,9 @@ Invariants:
   everything it does goes through the same small action set as the buttons.
 - The TV quirks are load-bearing, each with a comment in `internal/tv`: DIAL needs the
   YouTube app's `Origin`, DLNA wants named entities (`&quot;`, not `&#34;`), and `Play`
-  answers "Transition not available" when the TV already started the new URI.
+  answers "Transition not available" when the TV already started the new URI. A YouTube app that
+  is already open ignores a DIAL launch (it answers 200 and does nothing), so
+  `PlayYouTube` sends it the video over YouTube's cast channel (`internal/tv/lounge.go`).
 - Use a bot dedicated to tvctl (@orshih_tvctl_bot), never the notification bot.
 
 `make check` before finishing work.

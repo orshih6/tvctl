@@ -29,7 +29,7 @@ No cloud and no Samsung account: everything is the TV's own LAN interfaces.
 | Apps (open, close, status) | REST on `:8001` |
 | Remote keys | the paired remote websocket on `:8002` |
 | Volume, mute, showing media by URL | UPnP/DLNA on `:9197` |
-| YouTube by video id | DIAL on `:8080` |
+| YouTube by video id | DIAL on `:8080` starts the app on the video; an app that is already open gets it over YouTube's cast channel (needs internet) |
 | Power on | Wake-on-LAN, then the power key |
 
 Media you send is saved under a random 128-bit name, served to the TV from a small HTTP
