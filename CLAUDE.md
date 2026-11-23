@@ -16,8 +16,12 @@ Invariants:
 - **The Mini App (`internal/bot/app.go`) is the only thing reachable from the internet.**
   The page is a public empty shell; every `/api/` call must pass `VerifyInitData`
   (Telegram's signature, fresh, the one chat) or gets an empty 401. It serves the page and
-  three calls, on its own port: never add media, files or an unsigned call to it, and it
-  can do only what the bot's buttons do.
+  four calls (state, volume, a button action, YouTube search), on its own port: never add
+  media, files or an unsigned call to it, and it can do only what the bot's buttons do. It
+  plays a search result by its 11-character id only, and the page's one outside image
+  source is `i.ytimg.com` (thumbnails).
+- **YouTube search (`internal/youtube`) uses the website's own search call**: no API key
+  and no account. It only returns ids and titles; never add downloading or a login to it.
 - Claude gets **WebSearch only** (to find a YouTube video id) and never invents an id;
   everything it does goes through the same small action set as the buttons.
 - The TV quirks are load-bearing, each with a comment in `internal/tv`: DIAL needs the

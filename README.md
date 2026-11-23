@@ -5,15 +5,17 @@ as the TV, talk to your own Telegram bot, and the TV does it:
 
 - `/remote`: buttons for arrows, OK, Back, Home, volume, play/pause, apps
 - **a Mini App remote** (optional): a page inside Telegram with a real volume slider, a
-  d-pad and the same buttons
+  d-pad, a YouTube search and the same buttons
 - **send a photo, video or song**: it shows or plays on the TV
 - **send a YouTube link**: it plays on the TV
+- **search YouTube**: `/yt lofi music` lists results, tap one to play it; the Mini App has
+  a search box with thumbnails. No API key: it asks YouTube the way the website does
 - `/status` · `/vol 10` · `/mute` · `/open netflix` · `/close` (background apps) · `/on` · `/off` · `/stop`
 - **plain words**: "turn it down a bit", "put on lofi music", "close everything and open YouTube".
   Claude (`claude -p`, WebSearch only) turns it into the same actions as the buttons.
 
 The same commands work from a terminal: `tvctl status`, `tvctl key KEY_HOME`,
-`tvctl yt <link>`, … (`tvctl help`).
+`tvctl yt <link>`, `tvctl search <words>`, … (`tvctl help`).
 
 Built and tested against a 2024 Samsung UE55DU8500 (Tizen 8). Other recent Samsung TVs
 speak the same protocols but are untested.

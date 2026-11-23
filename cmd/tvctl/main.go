@@ -18,6 +18,7 @@ import (
 	"github.com/orshih6/tvctl/internal/claude"
 	"github.com/orshih6/tvctl/internal/telegram"
 	"github.com/orshih6/tvctl/internal/tv"
+	"github.com/orshih6/tvctl/internal/youtube"
 )
 
 var version = "dev"
@@ -32,6 +33,7 @@ const usage = `tvctl — the Samsung TV at home, from Telegram or a terminal
   tvctl open <app>       youtube, netflix, prime, spotify, appletv, twitch, browser
   tvctl close [all]      close background apps (all: every app)
   tvctl yt <link|id>     play a YouTube video on the TV
+  tvctl search <words>   search YouTube; prints ids for "tvctl yt"
   tvctl on | off         wake / standby
 
 Environment: TV_HOST (the TV's address on your network, required), TV_MAC
@@ -59,7 +61,7 @@ func main() {
 	if err := os.MkdirAll(data, 0o700); err != nil {
 		fail(err)
 	}
-	if env("TV_HOST", "") == "" && os.Args[1] != "version" {
+	if env("TV_HOST", "") == "" && os.Args[1] != "version" && os.Args[1] != "search" {
 		fail(fmt.Errorf("set TV_HOST to the TV's address on your network (e.g. 192.168.1.50)"))
 	}
 	t := tv.New(env("TV_HOST", ""), env("TV_MAC", ""), env("TVCTL_NAME", "tvctl"), filepath.Join(data, "tv-token"))
@@ -113,9 +115,18 @@ func main() {
 	case "yt":
 		id, ok := tv.YouTubeID(arg)
 		if !ok {
-			fail(fmt.Errorf("not a YouTube link: %q", arg))
+			fail(fmt.Errorf("not a YouTube link: %q (to search: tvctl search %s)", arg, arg))
 		}
 		check(t.PlayYouTube(ctx, id))
+	case "search":
+		if arg == "" {
+			fail(fmt.Errorf("search for what? e.g. tvctl search lofi music"))
+		}
+		vs, err := youtube.Search(ctx, arg, 10)
+		check(err)
+		for _, v := range vs {
+			fmt.Printf("%s  %-8s  %s — %s\n", v.ID, v.Length, v.Title, v.Channel)
+		}
 	case "on":
 		check(t.On(ctx))
 	case "off":

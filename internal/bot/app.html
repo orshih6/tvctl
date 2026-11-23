@@ -88,7 +88,40 @@ header .grow { flex: 1; min-width: 0; }
   align-items: center; justify-content: center; padding: 32px; text-align: center; color: var(--hint);
 }
 #block.show { display: flex; }
-.off main > .card { opacity: .45; }
+.off main > .card:not(#yt) { opacity: .45; }
+
+#yt { padding: 10px; }
+#q-form { display: flex; gap: 8px; }
+#q {
+  flex: 1; min-width: 0; font: inherit; color: var(--text); background: var(--key);
+  border: 0; border-radius: 14px; height: 48px; padding: 0 14px; outline: 0;
+  -webkit-user-select: text; user-select: text; -webkit-appearance: none; appearance: none;
+}
+#q::placeholder { color: var(--hint); }
+#q::-webkit-search-cancel-button { display: none; }
+#q-go, #q-x { min-height: 48px; width: 48px; flex: none; }
+#q-go { background: var(--accent); color: var(--on-accent); }
+#q-x { display: none; }
+#yt.has #q-x { display: flex; }
+#results { display: none; margin-top: 10px; max-height: 58vh; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+#yt.has #results { display: block; }
+#results .note { color: var(--hint); font-size: 14px; text-align: center; padding: 14px 0 8px; }
+.vid {
+  width: 100%; min-height: 0; padding: 6px; gap: 10px; background: none; border-radius: 12px;
+  justify-content: flex-start; align-items: flex-start; text-align: left;
+}
+.vid:active { transform: none; }
+.vid.playing { background: var(--key); }
+.thumb { position: relative; flex: none; width: 124px; aspect-ratio: 16 / 9; border-radius: 9px; overflow: hidden; background: var(--key); }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb span {
+  position: absolute; right: 4px; bottom: 4px; padding: 1px 5px; border-radius: 5px;
+  background: rgba(0,0,0,.78); color: #fff; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.thumb span.live { background: #e5484d; }
+.vid .t { font-size: 14px; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.vid .c { color: var(--hint); font-size: 12px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vid .meta { min-width: 0; flex: 1; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -99,6 +132,15 @@ header .grow { flex: 1; min-width: 0; }
     <div class="grow"><div id="name">TV</div><div id="sub">Connecting…</div></div>
     <button id="power" aria-label="Power"><svg viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 7.2a8 8 0 1 0 11.4 0"/></svg></button>
   </header>
+
+  <section class="card" id="yt">
+    <form id="q-form" action="#" role="search">
+      <input id="q" type="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" placeholder="Search YouTube" aria-label="Search YouTube">
+      <button type="button" id="q-x" aria-label="Clear the search"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+      <button type="submit" id="q-go" aria-label="Search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg></button>
+    </form>
+    <div id="results"></div>
+  </section>
 
   <section class="card">
     <div class="vol-top"><span>Volume</span><div id="num">–</div></div>
@@ -261,6 +303,65 @@ header .grow { flex: 1; min-width: 0; }
         paint(s);
       }).catch(function (e) { if (e.message !== 'expired') toast('The TV did not answer.'); });
     });
+  });
+
+  // YouTube search: results are built with textContent only (titles are
+  // other people's text), and a tap plays one by its id.
+  var q = $('q'), results = $('results'), searchN = 0;
+  function note(text) {
+    results.textContent = '';
+    var d = document.createElement('div'); d.className = 'note'; d.textContent = text;
+    results.appendChild(d); $('yt').classList.add('has');
+  }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; return e;
+  }
+  function show(videos) {
+    results.textContent = ''; results.scrollTop = 0;
+    videos.forEach(function (v) {
+      if (!/^[A-Za-z0-9_-]{11}$/.test(v.id)) return;
+      var b = el('button', 'vid'); b.type = 'button';
+      var th = el('div', 'thumb'), img = el('img');
+      img.alt = ''; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer';
+      img.src = 'https://i.ytimg.com/vi/' + v.id + '/mqdefault.jpg';
+      img.onerror = function () { img.remove(); };
+      th.appendChild(img);
+      if (v.length) th.appendChild(el('span', v.length === 'LIVE' ? 'live' : '', v.length));
+      var meta = el('div', 'meta');
+      meta.appendChild(el('div', 't', v.title));
+      if (v.channel) meta.appendChild(el('div', 'c', v.channel));
+      b.appendChild(th); b.appendChild(meta);
+      b.addEventListener('click', function () {
+        buzz('medium');
+        Array.prototype.forEach.call(results.querySelectorAll('.playing'), function (p) { p.classList.remove('playing'); });
+        b.classList.add('playing');
+        api('/api/do', { data: 'y:' + v.id }).then(paint).catch(function (e) {
+          b.classList.remove('playing');
+          if (e.message !== 'expired') toast('The TV did not answer.');
+        });
+      });
+      results.appendChild(b);
+    });
+    $('yt').classList.add('has');
+  }
+  $('q-form').addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var text = q.value.trim();
+    if (!text) return;
+    q.blur(); buzz('light');
+    var mine = ++searchN;
+    note('Searching…');
+    api('/api/search', { q: text }).then(function (s) {
+      if (mine !== searchN) return; // a newer search is on its way
+      if (s.msg) return note(s.msg);
+      if (!s.videos || !s.videos.length) return note('Nothing found.');
+      show(s.videos);
+    }).catch(function (e) {
+      if (mine === searchN && e.message !== 'expired') note('No connection. Try again.');
+    });
+  });
+  $('q-x').addEventListener('click', function () {
+    searchN++; q.value = ''; results.textContent = ''; $('yt').classList.remove('has');
   });
 
   refresh();

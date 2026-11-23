@@ -23,6 +23,7 @@ import (
 	"github.com/orshih6/tvctl/internal/claude"
 	"github.com/orshih6/tvctl/internal/telegram"
 	"github.com/orshih6/tvctl/internal/tv"
+	"github.com/orshih6/tvctl/internal/youtube"
 )
 
 type Bot struct {
@@ -32,7 +33,9 @@ type Bot struct {
 	MediaDir  string     // photos/videos waiting for the TV to fetch them
 	MediaPort int        // served on this port, on every interface
 	AppURL    string     // public HTTPS address of the Mini App; empty: no Mini App
-	Log       *slog.Logger
+	// Search finds YouTube videos; nil: youtube.Search. Tests replace it.
+	Search func(ctx context.Context, query string, n int) ([]youtube.Video, error)
+	Log    *slog.Logger
 
 	volMu   sync.Mutex // one volume change at a time
 	volBase int        // the volume when the current burst of changes began
@@ -115,7 +118,7 @@ var Commands = []telegram.Command{
 	{Name: "mute", Help: "mute or unmute"},
 	{Name: "open", Help: "open an app: /open youtube"},
 	{Name: "close", Help: "close background apps (/close all: every app)"},
-	{Name: "yt", Help: "play a YouTube link on the TV"},
+	{Name: "yt", Help: "search YouTube: /yt lofi music (or a link to play it)"},
 	{Name: "stop", Help: "stop a photo or video sent from here"},
 	{Name: "help", Help: "what this bot can do"},
 }
@@ -125,6 +128,7 @@ const help = `<b>TV remote</b> for the Samsung TV.
 • /remote — buttons: arrows, OK, Back, Home, volume
 • Send a <b>photo or video</b> — it appears on the TV
 • Send a <b>YouTube link</b> — it plays on the TV
+• /yt lofi music — <b>search YouTube</b>, tap a result to play it
 • /vol 10 · /mute · /open netflix · /close · /on · /off · /status
 • Or just say it: <i>"turn it down a bit"</i>, <i>"put on lofi music"</i>, <i>"close everything and open YouTube"</i>
 
@@ -149,6 +153,8 @@ func (b *Bot) Button(ctx context.Context, data string) string {
 		return plain(b.status(ctx))
 	case "p":
 		return plain(b.power(ctx, arg == "on"))
+	case "y": // a search result
+		return plain(b.youtube(ctx, arg))
 	}
 	return ""
 }
@@ -159,6 +165,9 @@ func (b *Bot) Command(ctx context.Context, name, args string) (string, [][]teleg
 		return help, b.remote()
 	case "remote":
 		return "📺 Remote", b.remote()
+	}
+	if isSearch(name, args) {
+		return b.search(ctx, args)
 	}
 	if reply, ok := b.quick(ctx, name, args); ok {
 		return reply, nil
@@ -205,6 +214,9 @@ func (b *Bot) Text(ctx context.Context, text string) (string, [][]telegram.Butto
 		return b.youtube(ctx, id), nil
 	}
 	name, args, _ := strings.Cut(strings.TrimSpace(text), " ")
+	if isSearch(strings.ToLower(name), strings.TrimSpace(args)) {
+		return b.search(ctx, strings.TrimSpace(args))
+	}
 	if reply, ok := b.quick(ctx, strings.ToLower(name), strings.TrimSpace(args)); ok {
 		return reply, nil
 	}
@@ -401,6 +413,60 @@ func (b *Bot) youtube(ctx context.Context, link string) string {
 		return b.problem(ctx, err)
 	}
 	return "▶️ Playing on the TV."
+}
+
+// isSearch: "yt lofi music" is a search; "yt <link or id>" plays, and "yt"
+// alone opens the app (both left to quick).
+func isSearch(name, args string) bool {
+	switch name {
+	case "search":
+		return true
+	case "yt", "youtube":
+		return args != "" && !isVideo(args)
+	}
+	return false
+}
+
+var lowerWord = regexp.MustCompile(`^[a-z]+$`)
+
+// isVideo reports whether s is a YouTube link or a bare video id rather than
+// search words. An 11-letter lowercase word ("interstella") is taken as a
+// word: real ids almost never look like that.
+func isVideo(s string) bool {
+	_, ok := tv.YouTubeID(s)
+	return ok && !lowerWord.MatchString(strings.TrimSpace(s))
+}
+
+const searchResults = 6
+
+func (b *Bot) find(ctx context.Context, q string, n int) ([]youtube.Video, error) {
+	if b.Search != nil {
+		return b.Search(ctx, q, n)
+	}
+	return youtube.Search(ctx, q, n)
+}
+
+// search lists YouTube videos for q, one button each; a tap plays it.
+func (b *Bot) search(ctx context.Context, q string) (string, [][]telegram.Button) {
+	if q == "" {
+		return "Search for what? e.g. /yt lofi music", nil
+	}
+	vs, err := b.find(ctx, q, searchResults)
+	if err != nil {
+		b.Log.Warn("youtube search failed", "err", err)
+		return "⚠️ YouTube search didn't answer. Try again, or send a link.", nil
+	}
+	if len(vs) == 0 {
+		return "Nothing on YouTube for “" + telegram.Esc(q) + "”.", nil
+	}
+	var s strings.Builder
+	var rows [][]telegram.Button
+	fmt.Fprintf(&s, "🔎 <b>%s</b> — tap one to play it on the TV\n", telegram.Esc(q))
+	for i, v := range vs {
+		fmt.Fprintf(&s, "\n%d. %s\n    <i>%s</i>", i+1, telegram.Esc(v.Title), telegram.Esc(strings.Trim(v.Channel+" · "+v.Length, " ·")))
+		rows = append(rows, []telegram.Button{{Text: fmt.Sprintf("%d. %s", i+1, telegram.Clip(v.Title, 44)), Data: "y:" + v.ID}})
+	}
+	return s.String(), rows
 }
 
 // problem turns an error into a reply, checking first whether the TV is

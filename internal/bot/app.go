@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
-// The Mini App: a remote with a real volume slider, opened inside Telegram.
+// The Mini App: a remote with a real volume slider and a YouTube search,
+// opened inside Telegram.
 // Its address is public (Telegram only opens HTTPS pages), so the page is an
 // empty shell and every /api/ call must carry Telegram's signed launch data
 // for the one chat this bot obeys. Without it nothing is read from the TV and
@@ -49,7 +52,7 @@ func (b *Bot) appHandler() http.Handler {
 		h.Set("Cache-Control", "no-store")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline' https://telegram.org; style-src 'unsafe-inline'; connect-src 'self'; img-src data:")
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline' https://telegram.org; style-src 'unsafe-inline'; connect-src 'self'; img-src data: https://i.ytimg.com")
 		_, _ = w.Write(appHTML)
 	})
 	mux.HandleFunc("GET /api/state", b.signed(func(w http.ResponseWriter, r *http.Request) {
@@ -94,8 +97,41 @@ func (b *Bot) appHandler() http.Handler {
 		}
 		reply(w, b.appState(r.Context(), msg))
 	}))
+	mux.HandleFunc("POST /api/search", b.signed(func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Q string `json:"q"`
+		}
+		if !body(w, r, &in) || strings.TrimSpace(in.Q) == "" || utf8.RuneCountInString(in.Q) > 200 {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		type video struct {
+			ID      string `json:"id"`
+			Title   string `json:"title"`
+			Channel string `json:"channel"`
+			Length  string `json:"length"`
+		}
+		out := struct {
+			Videos []video `json:"videos"`
+			Msg    string  `json:"msg,omitempty"`
+		}{Videos: []video{}}
+		vs, err := b.find(r.Context(), strings.TrimSpace(in.Q), appSearchResults)
+		if err != nil {
+			b.Log.Warn("youtube search failed", "err", err)
+			out.Msg = "YouTube search didn't answer. Try again."
+		}
+		for _, v := range vs {
+			out.Videos = append(out.Videos, video{v.ID, v.Title, v.Channel, v.Length})
+		}
+		reply(w, out)
+	}))
 	return mux
 }
+
+// appSearchResults: the page scrolls, so it shows more than a chat message.
+const appSearchResults = 12
+
+var videoID = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 
 // appAction reports whether data is one of the bot's own button actions.
 func appAction(data string) bool {
@@ -112,6 +148,8 @@ func appAction(data string) bool {
 		return arg == "bg"
 	case "p":
 		return arg == "on" || arg == "off"
+	case "y": // a search result, by id only: never a link
+		return videoID.MatchString(arg)
 	}
 	return false
 }

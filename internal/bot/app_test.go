@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/orshih6/tvctl/internal/telegram"
 	"github.com/orshih6/tvctl/internal/tv"
+	"github.com/orshih6/tvctl/internal/youtube"
 )
 
 const testToken = "123:secret"
@@ -38,6 +40,9 @@ func testApp(t *testing.T) *httptest.Server {
 		TV:  tv.New("127.0.0.1", "", "tvctl", t.TempDir()+"/token"),
 		TG:  telegram.New(testToken, 42, log),
 		Log: log,
+		Search: func(context.Context, string, int) ([]youtube.Video, error) {
+			return []youtube.Video{{ID: "aaaaaaaaaa1", Title: "Tom", Channel: "WB", Length: "3:00"}}, nil
+		},
 	}
 	srv := httptest.NewServer(b.appHandler())
 	t.Cleanup(srv.Close)
@@ -76,6 +81,8 @@ func TestAppNeedsSignature(t *testing.T) {
 		{"GET", "/api/state", ""},
 		{"POST", "/api/volume", `{"level":100}`},
 		{"POST", "/api/do", `{"data":"p:off"}`},
+		{"POST", "/api/do", `{"data":"y:dQw4w9WgXcQ"}`},
+		{"POST", "/api/search", `{"q":"lofi"}`},
 	}
 	for name, auth := range logins {
 		for _, c := range calls {
@@ -102,7 +109,15 @@ func TestAppSigned(t *testing.T) {
 			t.Errorf("do %q = %d, want 400", data, code)
 		}
 	}
-	// Only the page and the three calls exist; media is never served here.
+	for _, body := range []string{``, `{}`, `{"q":"  "}`, `{"q":"` + strings.Repeat("a", 201) + `"}`} {
+		if code, _ := call(t, srv, "POST", "/api/search", me, body); code != http.StatusBadRequest {
+			t.Errorf("search %q = %d, want 400", body, code)
+		}
+	}
+	if code, body := call(t, srv, "POST", "/api/search", me, `{"q":"tom"}`); code != 200 || !strings.Contains(body, `"id":"aaaaaaaaaa1"`) || !strings.Contains(body, `"title":"Tom"`) {
+		t.Errorf("search = %d %s", code, body)
+	}
+	// Only the page and the four calls exist; media is never served here.
 	for _, path := range []string{"/m/x", "/api/", "/app.html", "/api/state/"} {
 		if code, _ := call(t, srv, "GET", path, me, ""); code != http.StatusNotFound {
 			t.Errorf("GET %s = %d, want 404", path, code)
